@@ -1,0 +1,19 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron",
+      "schedule": "*/5 * * * *"
+    }
+  ],
+  "functions": {
+    "api/riff.ts": {
+      "maxDuration": 120
+    },
+    "api/engage.ts": {
+      "maxDuration": 120
+    },
+    "api/comments.ts": {
+      "maxDuration": 120
+    }
+  }
+}

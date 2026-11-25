@@ -1,0 +1,394 @@
+<title>LinkedIn Calendar</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: review board. Status strip and filter tabs on top; post list on the left, the open post's editor on the right (a full-screen sheet on phones). */
+:root {
+  --bg: #f6f7fa; --surface: #ffffff; --fg: #161a24; --muted: #5d6578; --line: #dfe3ec;
+  --accent: #2346c7; --accent-soft: #e6ebfb; --on-accent: #ffffff;
+  --ok: #1d7a4c; --ok-soft: #e2f3ea; --warn: #9a5b00; --warn-soft: #fbf0dc; --bad: #b42318; --bad-soft: #fbe5e3;
+  --display: "Bricolage Grotesque", "Avenir Next", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0f121a; --surface: #171b26; --fg: #e8ebf2; --muted: #98a0b3; --line: #2a3040;
+  --accent: #8ea6ff; --accent-soft: #1e2645; --on-accent: #0f121a;
+  --ok: #5fd39a; --ok-soft: #14301f; --warn: #f0b45a; --warn-soft: #33260f; --bad: #ff8a80; --bad-soft: #3a1714; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #0f121a; --surface: #171b26; --fg: #e8ebf2; --muted: #98a0b3; --line: #2a3040;
+  --accent: #8ea6ff; --accent-soft: #1e2645; --on-accent: #0f121a;
+  --ok: #5fd39a; --ok-soft: #14301f; --warn: #f0b45a; --warn-soft: #33260f; --bad: #ff8a80; --bad-soft: #3a1714; color-scheme: dark }
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font: 15px/1.55 var(--body); }
+.wrap { max-width: 1240px; margin: 0 auto; padding-block: 28px 64px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 24px; }
+h1 { font: 700 clamp(28px, 5vw, 40px)/1.1 var(--display); margin: 0; text-wrap: balance; letter-spacing: -0.01em; }
+h2 { font: 700 20px/1.2 var(--display); margin: 0; text-wrap: balance; }
+.sub { color: var(--muted); margin: 6px 0 0; font-size: 14px; }
+.label { font: 500 11px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.strip, .tabs, .meta, .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px; font: 500 13px/1 var(--body);
+  background: var(--surface); border: 1px solid var(--line); }
+.chip b { font-family: var(--mono); font-weight: 500; font-variant-numeric: tabular-nums; }
+.chip.bad { background: var(--bad-soft); border-color: transparent; color: var(--bad); }
+.chip.next { background: var(--accent-soft); border-color: transparent; color: var(--accent); }
+.chip.wait { background: var(--warn-soft); border-color: transparent; color: var(--warn); }
+.dbnote { font-size: 13px; color: var(--muted); }
+.dbnote.bad { color: var(--bad); }
+
+button, .btn { font: 500 14px/1 var(--body); border-radius: 8px; padding: 9px 13px; border: 1px solid var(--line);
+  background: var(--surface); color: var(--fg); cursor: pointer; }
+button:hover { border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); }
+button:focus-visible, textarea:focus-visible, input:focus-visible, .item:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button:disabled { opacity: .5; cursor: default; }
+button.primary { background: var(--accent); color: var(--on-accent); border-color: transparent; }
+button.on { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
+.tab { border-radius: 999px; padding: 7px 12px; font-size: 13px; }
+.tab b { font-family: var(--mono); font-weight: 500; margin-left: 4px; }
+
+.board { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.25fr); gap: 20px; align-items: start; }
+.list { display: grid; gap: 8px; min-width: 0; }
+.item { display: grid; gap: 6px; text-align: left; padding: 12px 14px; border-radius: 10px; width: 100%; font: inherit; line-height: 1.35; }
+.item.sel { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.item .title { font-weight: 600; }
+.pill { font: 500 11px/1 var(--mono); padding: 4px 7px; border-radius: 5px; background: var(--bg); color: var(--muted); letter-spacing: 0.02em; white-space: nowrap; }
+.pill.scheduled, .pill.ready { background: var(--accent-soft); color: var(--accent); }
+.pill.ok, .pill.posted { background: var(--ok-soft); color: var(--ok); }
+.pill.flag, .pill.wait { background: var(--warn-soft); color: var(--warn); }
+.pill.failed, .pill.skip { background: var(--bad-soft); color: var(--bad); }
+.empty { border: 1.5px dashed var(--line); border-radius: 10px; padding: 14px; color: var(--muted); font-size: 14px; }
+
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 18px; display: grid; gap: 18px; min-width: 0;
+  position: sticky; top: calc(16px + env(safe-area-inset-top, 0px)); max-height: calc(100vh - 32px); overflow-y: auto; }
+.panel .back { display: none; }
+.block { display: grid; gap: 8px; min-width: 0; }
+textarea, input[type=date] { font: 15px/1.55 var(--body); color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; width: 100%; }
+textarea#ed-text { min-height: 320px; resize: vertical; }
+textarea#ed-fb { min-height: 84px; resize: vertical; }
+input[type=date] { width: auto; }
+.preview { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; background: var(--bg); border-radius: 8px; padding: 10px 12px; }
+.preview .more { color: var(--muted); }
+.count { font: 400 12px/1 var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.count.over { color: var(--bad); }
+.notes { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; color: var(--muted); background: var(--bg); border-radius: 8px; padding: 10px 12px; }
+.thread { display: grid; gap: 8px; }
+.msg { font-size: 14px; padding: 9px 12px; border-radius: 8px; white-space: pre-wrap; overflow-wrap: anywhere; max-width: 92%; }
+.msg.author { background: var(--accent-soft); justify-self: end; }
+.msg.claude { background: var(--bg); border: 1px solid var(--line); justify-self: start; }
+.msg .who { display: block; margin-bottom: 4px; }
+.status { font-size: 13px; color: var(--muted); min-height: 1.2em; }
+.status.err { color: var(--bad); }
+.how { font-size: 13px; color: var(--muted); }
+.how code { font-family: var(--mono); font-size: 12.5px; color: var(--fg); }
+
+details.posted { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+details.posted summary { cursor: pointer; padding: 12px 14px; font-weight: 600; }
+.tablebox { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th { text-align: left; font: 500 11px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); padding: 10px 12px 8px; border-bottom: 1px solid var(--line); }
+td { padding: 9px 12px; border-top: 1px solid var(--line); vertical-align: top; }
+td.num, th.num { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+td.date { font-family: var(--mono); font-size: 12px; color: var(--muted); white-space: nowrap; }
+td a { color: var(--fg); text-decoration-color: var(--line); text-underline-offset: 3px; }
+
+@media (max-width: 860px) {
+  .board { grid-template-columns: minmax(0, 1fr); }
+  .panel { position: fixed; inset: 0; z-index: 20; border-radius: 0; border: 0; max-height: none;
+    padding-top: calc(16px + env(safe-area-inset-top, 0px)); padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+    padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  .panel.idle { display: none; }
+  .panel .back { display: inline-block; justify-self: start; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="label">LinkedIn · run from Claude</div>
+    <h1>What's going out</h1>
+    <p class="sub" id="asof"></p>
+  </header>
+  <div class="strip" id="strip"></div>
+  <div class="tabs" id="tabs" role="tablist" aria-label="Filter posts"></div>
+  <p class="dbnote" id="dbnote">Connecting to your review notes…</p>
+  <div class="board">
+    <div class="list" id="list"></div>
+    <aside class="panel idle" id="panel" aria-live="polite"></aside>
+  </div>
+  <details class="posted"><summary id="pcount">Posted</summary>
+    <div class="tablebox"><table><thead><tr><th>Date</th><th>Post</th><th class="num">Reactions</th><th class="num">Comments</th></tr></thead><tbody id="posted"></tbody></table></div>
+  </details>
+  <p class="how">Edits, feedback, "ready" and dates save here instantly. Claude picks them up when you say <code>check the board</code>, revises, replies in the post's thread and schedules what's ready. Nothing goes to LinkedIn without your OK.</p>
+</div>
+
+<script>
+const D = /*__DATA__*/null;
+const TZ = D.schedule.timeZone;
+const FOLD = 210; // roughly what LinkedIn shows before "…see more" on desktop
+const LIMIT = 3000;
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const fmt = (iso, o) => new Intl.DateTimeFormat("en-GB", { timeZone: TZ, ...o }).format(new Date(iso));
+const dayName = iso => fmt(iso, { weekday: "short", day: "numeric", month: "short" });
+const hm = iso => fmt(iso, { hour: "2-digit", minute: "2-digit" });
+const flagged = p => /CHECK|TO DO|\[to write|\[.*\]/i.test((p.notes || "") + p.text);
+const short = id => id.slice(0, 8);
+
+const posts = D.posts.filter(p => p.status !== "posted");
+const byId = Object.fromEntries(posts.map(p => [p.id, p]));
+let R = {};            // review docs from the db, keyed by post id
+let db = null, canWrite = false;
+let filter = null, selected = null;
+const dirty = {};      // unsaved editor text per post (this view only)
+
+// ---- derived state ----
+function review(p) { return R[p.id] || {}; }
+function bucket(p) {
+  const r = review(p);
+  if (p.status === "failed") return "attention";
+  if (p.status === "scheduled" || p.status === "publishing") return "scheduled";
+  const last = (r.thread || [])[(r.thread || []).length - 1];
+  if (last && last.by === "author") return "waiting"; // feedback Claude hasn't answered yet
+  if (r.state === "skip") return "skipped";
+  if (r.state === "ready") return "ready";
+  return "review";
+}
+const TABS = [
+  ["review", "To review"], ["waiting", "Feedback sent"], ["ready", "Ready"],
+  ["scheduled", "Scheduled"], ["attention", "Failed"], ["skipped", "Skipped"], ["all", "All"],
+];
+function currentText(p) { return dirty[p.id] ?? review(p).draft ?? p.text ?? ""; }
+
+// ---- render ----
+function renderStrip() {
+  const an = D.analytics.posts;
+  const DAY = 86400000;
+  const last = [...an.map(x => x.date), ...D.posts.filter(p => p.postedAt).map(p => p.postedAt)].sort().pop();
+  const since = last ? Math.floor((Date.now() - Date.parse(last)) / DAY) : null;
+  const sched = posts.filter(p => bucket(p) === "scheduled").sort((a, b) => a.scheduledAt.localeCompare(b.scheduledAt));
+  const n = k => posts.filter(p => bucket(p) === k).length;
+  $("strip").innerHTML = [
+    n("attention") ? `<span class="chip bad"><b>${n("attention")}</b> failed</span>` : "",
+    sched[0] ? `<span class="chip next">Next: ${esc(dayName(sched[0].scheduledAt))} ${hm(sched[0].scheduledAt)}</span>` : `<span class="chip">Nothing scheduled</span>`,
+    since !== null ? `<span class="chip${since > 14 ? " bad" : ""}"><b>${since}</b> days since last post</span>` : "",
+    n("waiting") ? `<span class="chip wait"><b>${n("waiting")}</b> with Claude</span>` : "",
+    `<span class="chip"><b>${n("ready")}</b> ready</span>`,
+    `<span class="chip"><b>${n("review")}</b> to review</span>`,
+  ].join("");
+}
+
+function renderTabs() {
+  $("tabs").innerHTML = TABS.map(([k, label]) => {
+    const c = k === "all" ? posts.length : posts.filter(p => bucket(p) === k).length;
+    if (!c && k !== filter && ["attention", "skipped", "waiting"].includes(k)) return "";
+    return `<button class="tab${k === filter ? " on" : ""}" role="tab" aria-selected="${k === filter}" data-tab="${k}">${label}<b>${c}</b></button>`;
+  }).join("");
+}
+
+function pillsFor(p) {
+  const r = review(p), b = bucket(p), text = currentText(p);
+  return [
+    b === "scheduled" ? `<span class="pill scheduled">${esc(dayName(p.scheduledAt))} ${hm(p.scheduledAt)}</span>` : "",
+    b === "attention" ? `<span class="pill failed">failed</span>` : "",
+    b === "waiting" ? `<span class="pill wait">feedback sent</span>` : "",
+    r.state === "ready" && b !== "scheduled" ? `<span class="pill ready">ready${r.wantDate ? " · " + esc(r.wantDate.slice(5).split("-").reverse().join("/")) : ""}</span>` : "",
+    r.state === "skip" ? `<span class="pill skip">skipped</span>` : "",
+    r.draft ? `<span class="pill ok">edit saved</span>` : "",
+    flagged(p) && !r.state ? `<span class="pill flag">has CHECKs</span>` : "",
+    `<span class="pill">${text.length.toLocaleString()} chars</span>`,
+  ].join("");
+}
+
+function sorted(list) {
+  return list.slice().sort((a, b) => {
+    if (a.scheduledAt && b.scheduledAt) return a.scheduledAt.localeCompare(b.scheduledAt);
+    return (b.createdAt || "").localeCompare(a.createdAt || "");
+  });
+}
+
+function renderList() {
+  const list = sorted(filter === "all" ? posts : posts.filter(p => bucket(p) === filter));
+  $("list").innerHTML = list.length ? list.map(p => `<button class="item${p.id === selected ? " sel" : ""}" data-id="${p.id}">
+      <span class="title">${esc(p.title || p.text.slice(0, 80))}</span><span class="meta">${pillsFor(p)}</span></button>`).join("")
+    : `<div class="empty">${{ review: "Nothing left to review.", waiting: "Nothing waiting on Claude.", ready: "Nothing marked ready yet. Open a post and press Ready.", scheduled: "Nothing scheduled. Mark posts ready and tell Claude to schedule them." }[filter] || "Nothing here."}</div>`;
+}
+
+function previewHtml(text) {
+  return text.length > FOLD ? `${esc(text.slice(0, FOLD))}<span class="more">…see more</span>` : esc(text);
+}
+
+function renderPanel() {
+  const panel = $("panel");
+  const p = byId[selected];
+  if (!p) {
+    panel.classList.add("idle");
+    panel.innerHTML = `<div class="empty">Open a post on the left to read it, edit it, leave feedback or mark it ready.</div>`;
+    return;
+  }
+  panel.classList.remove("idle");
+  const r = review(p), text = currentText(p), lock = !canWrite;
+  const thread = (r.thread || []).map(m => `<div class="msg ${m.by === "claude" ? "claude" : "author"}"><span class="label who">${m.by === "claude" ? "Claude" : "You"} · ${esc(fmt(m.at, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }))}</span>${esc(m.text)}</div>`).join("");
+  panel.innerHTML = `
+    <button class="back" data-act="close">← All posts</button>
+    <div class="block"><h2>${esc(p.title || "Untitled")}</h2><div class="meta">${pillsFor(p)}</div></div>
+    <div class="block">
+      <div class="row" style="justify-content:space-between"><label class="label" for="ed-text">Post text</label>
+        <span class="count${text.length > LIMIT ? " over" : ""}" id="ed-count">${text.length.toLocaleString()} / ${LIMIT.toLocaleString()}</span></div>
+      <textarea id="ed-text" ${lock ? "readonly" : ""}>${esc(text)}</textarea>
+      <div class="row">
+        <button class="primary" data-act="save" ${lock ? "disabled" : ""}>Save edit</button>
+        ${r.draft ? `<button data-act="revert" ${lock ? "disabled" : ""}>Back to Claude's version</button>` : ""}
+        <span class="status" id="st-text"></span>
+      </div>
+    </div>
+    <div class="block"><span class="label">How it looks before "see more"</span><div class="preview" id="ed-preview">${previewHtml(text)}</div></div>
+    ${p.firstComment ? `<div class="block"><span class="label">First comment</span><div class="notes">${esc(p.firstComment)}</div></div>` : ""}
+    <div class="block">
+      <span class="label">Decision</span>
+      <div class="row">
+        <button data-act="state" data-v="ready" class="${r.state === "ready" ? "on" : ""}" ${lock ? "disabled" : ""}>Ready to post</button>
+        <button data-act="state" data-v="work" class="${r.state === "work" ? "on" : ""}" ${lock ? "disabled" : ""}>Needs work</button>
+        <button data-act="state" data-v="skip" class="${r.state === "skip" ? "on" : ""}" ${lock ? "disabled" : ""}>Skip it</button>
+      </div>
+      <div class="row"><label for="ed-date" class="dbnote">Post on or around</label>
+        <input type="date" id="ed-date" value="${esc(r.wantDate || "")}" ${lock ? "disabled" : ""}>
+        ${p.scheduledAt ? `<span class="pill scheduled">booked ${esc(dayName(p.scheduledAt))} ${hm(p.scheduledAt)}</span>` : ""}</div>
+      <span class="status" id="st-state"></span>
+    </div>
+    <div class="block">
+      <span class="label">Feedback for Claude</span>
+      ${thread ? `<div class="thread">${thread}</div>` : ""}
+      <textarea id="ed-fb" placeholder="e.g. cut the second paragraph, open with the 16 questions line, make it sound less polished" ${lock ? "readonly" : ""}></textarea>
+      <div class="row"><button class="primary" data-act="feedback" ${lock ? "disabled" : ""}>Send to Claude</button><span class="status" id="st-fb"></span></div>
+    </div>
+    ${p.notes ? `<div class="block"><span class="label">Claude's notes</span><div class="notes">${esc(p.notes)}</div></div>` : ""}`;
+}
+
+function renderPosted() {
+  const an = D.analytics.posts.slice().sort((a, b) => b.date.localeCompare(a.date));
+  $("pcount").textContent = `Posted · ${an.length}`;
+  $("posted").innerHTML = an.map(x => `<tr>
+    <td class="date">${fmt(x.date, { day: "2-digit", month: "short", year: "2-digit" })}</td>
+    <td><a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.preview.slice(0, 90))}${x.preview.length > 90 ? "…" : ""}</a></td>
+    <td class="num">${x.reactions}</td><td class="num">${x.comments}</td></tr>`).join("") || `<tr><td colspan="4">No posts fetched yet.</td></tr>`;
+}
+
+function renderAll(keepPanel) {
+  renderStrip(); renderTabs(); renderList();
+  if (!keepPanel) renderPanel();
+}
+
+// ---- writes (one at a time per post) ----
+const queues = {};
+function writeReview(id, patch) {
+  const run = async () => {
+    const next = { ...(R[id] || {}), ...patch, updatedAt: new Date().toISOString() };
+    await db.collection("reviews").doc(id).set(next);
+    R[id] = next;
+  };
+  queues[id] = (queues[id] || Promise.resolve()).then(run, run);
+  return queues[id];
+}
+function setStatus(el, msg, err) { const s = $(el); if (s) { s.textContent = msg; s.className = "status" + (err ? " err" : ""); } }
+function failMsg(e) {
+  if (e && e.code === "invalid_argument") { canWrite = false; renderPanel(); return "You can view this board but not change it."; }
+  if (e && e.code === "quota_exceeded") return "The board's storage is full. Tell Claude.";
+  return "Couldn't save. Check your connection and try again.";
+}
+
+// ---- events ----
+$("tabs").addEventListener("click", e => {
+  const t = e.target.closest("[data-tab]"); if (!t) return;
+  filter = t.dataset.tab; renderTabs(); renderList();
+});
+$("list").addEventListener("click", e => {
+  const it = e.target.closest("[data-id]"); if (!it) return;
+  selected = it.dataset.id;
+  try { history.replaceState(null, "", "#p" + short(selected)); } catch {}
+  renderList(); renderPanel();
+  if (matchMedia("(max-width: 860px)").matches) $("panel").scrollTop = 0;
+});
+$("panel").addEventListener("input", e => {
+  if (e.target.id !== "ed-text" || !selected) return;
+  dirty[selected] = e.target.value;
+  const n = e.target.value.length, c = $("ed-count");
+  c.textContent = `${n.toLocaleString()} / ${LIMIT.toLocaleString()}`; c.classList.toggle("over", n > LIMIT);
+  $("ed-preview").innerHTML = previewHtml(e.target.value);
+  setStatus("st-text", "Unsaved changes");
+});
+$("panel").addEventListener("change", async e => {
+  if (e.target.id !== "ed-date" || !selected || !db) return;
+  const id = selected;
+  try { await writeReview(id, { wantDate: e.target.value || null, pending: true }); setStatus("st-state", e.target.value ? "Date saved" : "Date cleared"); renderAll(true); }
+  catch (err) { setStatus("st-state", failMsg(err), true); }
+});
+$("panel").addEventListener("click", async e => {
+  const b = e.target.closest("[data-act]"); if (!b) return;
+  const act = b.dataset.act, id = selected, p = byId[id];
+  if (act === "close") { selected = null; renderList(); renderPanel(); return; }
+  if (!db || !p) return;
+  b.disabled = true;
+  try {
+    if (act === "save") {
+      const t = $("ed-text").value;
+      await writeReview(id, { draft: t === p.text ? null : t, pending: t !== p.text || !!review(p).pending });
+      delete dirty[id]; setStatus("st-text", "Saved. This is now the version that gets posted.");
+      renderAll(true); return;
+    }
+    if (act === "revert") { await writeReview(id, { draft: null }); delete dirty[id]; renderAll(); return; }
+    if (act === "state") {
+      const v = review(p).state === b.dataset.v ? null : b.dataset.v;
+      await writeReview(id, { state: v, pending: v === "ready" ? true : !!review(p).pending });
+      renderAll(); setStatus("st-state", v === "ready" ? "Marked ready. Claude will pick a slot and confirm it with you." : "Saved");
+      return;
+    }
+    if (act === "feedback") {
+      const msg = $("ed-fb").value.trim();
+      if (!msg) { setStatus("st-fb", "Write some feedback first.", true); return; }
+      const thread = [...(review(p).thread || []), { by: "author", at: new Date().toISOString(), text: msg }];
+      await writeReview(id, { thread, pending: true });
+      renderAll(); setStatus("st-fb", "Sent. Claude will revise it next time you say \"check the board\".");
+      return;
+    }
+  } catch (err) {
+    setStatus(act === "feedback" ? "st-fb" : act === "state" ? "st-state" : "st-text", failMsg(err), true);
+  } finally { if (b.isConnected) b.disabled = false; }
+});
+
+// ---- boot ----
+(function boot() {
+  const m = (location.hash || "").match(/^#p([0-9a-z-]{6,})/i);
+  if (m) { const hit = posts.find(p => p.id.startsWith(m[1])); if (hit) selected = hit.id; }
+  const counts = k => posts.filter(p => bucket(p) === k).length;
+  filter = selected ? "all" : (counts("review") ? "review" : "all");
+  $("asof").textContent = `Posts as of ${fmt(D.exportedAt, { weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" })} (London)`;
+  renderPosted(); renderAll();
+})();
+
+(async () => {
+  if (!window.claude || !claude.use) { $("dbnote").textContent = "Read-only here: open this page on claude.ai to edit and leave feedback."; return; }
+  db = await claude.use("db");
+  if (!db) { $("dbnote").textContent = "Read-only here: sign in on claude.ai to edit and leave feedback."; return; }
+  canWrite = true;
+  let first = true;
+  const timer = setTimeout(() => { $("dbnote").textContent = "Your review notes haven't loaded yet. Edits may not save until they do."; $("dbnote").className = "dbnote bad"; }, 10000);
+  db.collection("reviews").onSnapshot(snap => {
+    const next = {};
+    snap.docs.forEach(d => { if (d.exists) next[d.id] = d.data(); });
+    R = next;
+    if (!snap.metadata.fromCache) { clearTimeout(timer); $("dbnote").textContent = ""; $("dbnote").className = "dbnote"; }
+    // Don't clobber the editor while typing: re-render the panel only on first load or when not editing.
+    const typing = document.activeElement && ["ed-text", "ed-fb"].includes(document.activeElement.id);
+    if (first && filter !== "all" && !selected) filter = posts.some(p => bucket(p) === "review") ? "review" : "all";
+    renderAll(typing && !first);
+    first = false;
+  }, err => {
+    clearTimeout(timer);
+    $("dbnote").textContent = err.code === "revoked" ? "Editing is no longer available on this page." : "Couldn't load your review notes. Reload the page to try again.";
+    $("dbnote").className = "dbnote bad"; canWrite = false; renderPanel();
+  });
+})();
+</script>
