@@ -1,5 +1,6 @@
 import { createHash, timingSafeEqual } from 'node:crypto'
 import { BlobPreconditionFailedError, del, get, put } from '@vercel/blob'
+import type { FeedPost } from './_circle.js'
 
 // Shapes mirror src/store.ts. Kept separate so the API has no client imports.
 export type Platform = 'linkedin' | 'x'
@@ -67,6 +68,8 @@ export interface AnalyticsPost {
   reactions: number
   comments: number
   reposts: number
+  /** Unknown (not 0) when LinkedIn didn't say. */
+  impressions?: number
   hasMedia: boolean
   viaApp: boolean
 }
@@ -75,6 +78,8 @@ export interface Analytics {
   attemptedAt?: string
   error?: string
   providerId?: string
+  /** Set once impressions have been read. A snapshot without it is refreshed straight away. */
+  withImpressions?: boolean
   posts: AnalyticsPost[]
 }
 export interface Profile {
@@ -93,12 +98,103 @@ export interface State {
   replied?: Record<string, string>
   /** What the Comments tab looks at: people to follow and topics to search. */
   engage?: EngageSettings
+  /** Comments you made on other people's posts from the Comments tab, and how each one landed. Newest last. */
+  commentLog?: LoggedComment[]
+  /** When the cron last went through commentLog. */
+  outcomesAt?: string
+  /** Who reacts to and comments on your own posts. Refreshed daily by the cron. */
+  engagers?: Engagers
+  /** Suggested people you said no to. Never suggested again. */
+  engageDismissed?: string[]
+  /** The ~150 people whose activity builds your feed. Rebuilt daily by the cron. */
+  circle?: Circle
+  /** People you took out of your circle. Never added back. */
+  circleExcluded?: string[]
+  /** When the cron last checked circle activity. */
+  circleRunAt?: string
+  /** Posts your circle posted, liked or commented on in the last 72 hours. */
+  circlePosts?: FeedPost[]
+  /** Post ids already read that turned out unusable (old, repost, comments off, unreadable): key -> until when to skip. */
+  circleSkip?: Record<string, string>
+  /** Why the most recent skipped posts were skipped (diagnostics, last 40). */
+  circleSkipWhy?: Record<string, string>
+  /** Bumped when the skip rules change, so posts skipped under the old rules get another try. */
+  circleSkipV?: number
+}
+export interface CirclePerson {
+  id: string
+  name: string
+  headline?: string
+  picture?: string
+  url?: string
+  /** Why they're in your circle. */
+  why: ('watchlist' | 'engager' | 'message' | 'poster')[]
+  /** When their activity was last attempted. */
+  checkedAt?: string
+  /** Checks in a row where every read failed. Three and they leave the circle until the next rebuild. */
+  failures?: number
+}
+export interface Circle {
+  builtAt?: string
+  attemptedAt?: string
+  error?: string
+  people: CirclePerson[]
+}
+export interface LoggedComment {
+  /** The post you commented on. One comment per post, so this is the key. */
+  socialId: string
+  commentId?: string
+  url?: string
+  author: string
+  authorId?: string
+  source: 'watchlist' | 'topic' | 'feed' | 'sector'
+  topic?: string
+  at: string
+  outcome?: CommentOutcome
+}
+export interface CommentOutcome {
+  checkedAt: string
+  /** Couldn't find your comment on the post any more (deleted, or the post went). */
+  missing?: boolean
+  /** Checks in a row that couldn't find it. Two makes it missing. */
+  misses?: number
+  likes: number
+  replies: number
+  /** The post's author replied under your comment. */
+  authorReplied: boolean
+  /** The post's author reacted to your comment. */
+  authorLiked: boolean
+}
+export interface Engager {
+  id: string
+  name: string
+  headline?: string
+  picture?: string
+  url?: string
+  comments: number
+  reactions: number
+  /** Dates of your posts they engaged with, newest first. */
+  on: string[]
+}
+export interface Engagers {
+  fetchedAt?: string
+  attemptedAt?: string
+  error?: string
+  /** How many of your posts were read. */
+  posts: number
+  people: Engager[]
 }
 export interface EngageSettings {
   watchlist: { name: string; profileId: string; headline?: string; picture?: string; url?: string }[]
   topics: string[]
   /** Topic posts need at least this many reactions to show up. */
   minReactions: number
+  /** Your LinkedIn feed, rebuilt: the last day's posts by your connections and people you follow. */
+  network?: { connections: boolean; following: boolean }
+  /** Feed posts need at least this many reactions. Default 30. */
+  feedMinReactions?: number
+  /** "Popular in your sector": LinkedIn industry ids to search, no keywords. */
+  industries?: { id: string; title: string }[]
 }
 
 const PATH = 'state.json'

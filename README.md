@@ -8,8 +8,12 @@ A self-hosted LinkedIn studio for one person: write posts with Claude, schedule 
 - **Calendar.** Drop a post on a day and it takes that day's best time, worked out from when your own past posts did best.
 - **Riff with Claude.** A writing partner beside the editor. It suggests 3 or 4 specific changes you can apply in one click, and rewrites on request, guided by a playbook of what works for you (`api/_playbook.ts`). It never invents facts.
 - **Replies.** Unanswered comments on your posts from the last 7 days, each with a reply drafted in your voice.
-- **Comments.** Recent posts from a watchlist of people plus topic searches, filtered to ones with real engagement, with a comment drafted for each.
-- **Results.** Reactions, comments and reposts on what you've published.
+- **Comments.** A rebuilt version of your feed, filtered to posts worth commenting on (30+ reactions by default, last 48 hours), with a comment drafted for each:
+  - **Your circle.** Up to 150 people the app picks for you: people who react to and comment on your posts, people you've messaged on LinkedIn in the last 90 days, and anyone you add to "Always in your circle". Every 15 minutes it checks a couple of them for what they posted, liked or commented on, so you see the posts your circle is actually engaging with, tagged with who touched them. Remove anyone with one click.
+  - **Popular in your sector.** The most engaged posts of the day from up to 5 LinkedIn industries you pick.
+  - **Topics.** Keyword searches you set.
+- **Learning loop.** Every comment you post is checked over the next 2 weeks: did it get likes or replies, and did the author engage back with you? A "What's working" table shows which people and sources pay off, and the app suggests people to add based on who engages with you.
+- **Results.** Impressions, reactions, comments and reposts on what you've published, with medians and splits by weekday and by whether the post had a photo.
 
 Nothing goes to LinkedIn without you: scheduled posts go out only when you've scheduled them, and every reply, comment and reaction goes out only when you click to send it. A cron job checks every 5 minutes and publishes at most one due post per run.
 

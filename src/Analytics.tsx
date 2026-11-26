@@ -9,6 +9,12 @@ const median = (xs: number[]) => {
 }
 const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1))
 const engagement = (p: AnalyticsPost) => p.reactions + p.comments + p.reposts
+/** Median over posts where LinkedIn gave impressions; "–" when none did. */
+const medImpr = (posts: AnalyticsPost[]) => {
+  const xs = posts.map((p) => p.impressions).filter((n): n is number => typeof n === 'number')
+  return xs.length ? fmtBig(median(xs)) : '–'
+}
+const fmtBig = (n: number) => (n >= 10_000 ? `${Math.round(n / 1000)}k` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : fmt(n))
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const weekday = (p: AnalyticsPost) => (new Date(p.date).getDay() + 6) % 7
 
@@ -17,6 +23,7 @@ function Summary({ label, posts }: { label: string; posts: AnalyticsPost[] }) {
     <tr>
       <th scope="row">{label}</th>
       <td>{posts.length}</td>
+      <td>{medImpr(posts)}</td>
       <td>{fmt(median(posts.map((p) => p.reactions)))}</td>
       <td>{fmt(median(posts.map((p) => p.comments)))}</td>
       <td>{fmt(median(posts.map((p) => p.reposts)))}</td>
@@ -26,7 +33,8 @@ function Summary({ label, posts }: { label: string; posts: AnalyticsPost[] }) {
 }
 
 export function AnalyticsView(props: { analytics: Analytics | null; onLoad: () => Promise<void> }) {
-  const [sort, setSort] = useState<{ key: 'date' | 'reactions'; desc: boolean }>({ key: 'date', desc: true })
+  type Key = 'date' | 'reactions' | 'impressions'
+  const [sort, setSort] = useState<{ key: Key; desc: boolean }>({ key: 'date', desc: true })
   const { onLoad } = props
   useEffect(() => {
     onLoad()
@@ -35,12 +43,17 @@ export function AnalyticsView(props: { analytics: Analytics | null; onLoad: () =
   const a = props.analytics
   const posts = (a?.posts ?? []).filter((p) => !Number.isNaN(Date.parse(p.date)))
   const rows = [...posts].sort((x, y) => {
-    const d = sort.key === 'date' ? Date.parse(x.date) - Date.parse(y.date) : x.reactions - y.reactions
+    const d =
+      sort.key === 'date'
+        ? Date.parse(x.date) - Date.parse(y.date)
+        : sort.key === 'impressions'
+          ? (x.impressions ?? -1) - (y.impressions ?? -1)
+          : x.reactions - y.reactions
     return sort.desc ? -d : d
   })
-  const toggle = (key: 'date' | 'reactions') => setSort((s) => ({ key, desc: s.key === key ? !s.desc : true }))
-  const arrow = (key: 'date' | 'reactions') => (sort.key === key ? (sort.desc ? ' ↓' : ' ↑') : '')
-  const ariaSort = (key: 'date' | 'reactions') => (sort.key === key ? (sort.desc ? 'descending' : 'ascending') : 'none')
+  const toggle = (key: Key) => setSort((s) => ({ key, desc: s.key === key ? !s.desc : true }))
+  const arrow = (key: Key) => (sort.key === key ? (sort.desc ? ' ↓' : ' ↑') : '')
+  const ariaSort = (key: Key) => (sort.key === key ? (sort.desc ? 'descending' : 'ascending') : 'none')
 
   return (
     <div className="page wide">
@@ -68,6 +81,10 @@ export function AnalyticsView(props: { analytics: Analytics | null; onLoad: () =
               <span className="muted">posts</span>
             </div>
             <div className="stat">
+              <span className="stat-num">{medImpr(posts)}</span>
+              <span className="muted">median impressions</span>
+            </div>
+            <div className="stat">
               <span className="stat-num">{fmt(median(posts.map((p) => p.reactions)))}</span>
               <span className="muted">median reactions</span>
             </div>
@@ -89,6 +106,7 @@ export function AnalyticsView(props: { analytics: Analytics | null; onLoad: () =
                   <tr>
                     <th />
                     <th>Posts</th>
+                    <th>Impressions</th>
                     <th>Reactions</th>
                     <th>Comments</th>
                     <th>Reposts</th>
@@ -108,6 +126,7 @@ export function AnalyticsView(props: { analytics: Analytics | null; onLoad: () =
                   <tr>
                     <th />
                     <th>Posts</th>
+                    <th>Impressions</th>
                     <th>Reactions</th>
                     <th>Comments</th>
                     <th>Reposts</th>
@@ -134,6 +153,11 @@ export function AnalyticsView(props: { analytics: Analytics | null; onLoad: () =
                     </button>
                   </th>
                   <th>Post</th>
+                  <th aria-sort={ariaSort('impressions')}>
+                    <button className="link" onClick={() => toggle('impressions')}>
+                      Impressions{arrow('impressions')}
+                    </button>
+                  </th>
                   <th aria-sort={ariaSort('reactions')}>
                     <button className="link" onClick={() => toggle('reactions')}>
                       Reactions{arrow('reactions')}
@@ -165,6 +189,7 @@ export function AnalyticsView(props: { analytics: Analytics | null; onLoad: () =
                       {p.hasMedia && <span className="pill">📷</span>}{' '}
                       {p.viaApp && <span className="pill ok-inline">via app</span>}
                     </td>
+                    <td>{p.impressions !== undefined ? p.impressions.toLocaleString() : '–'}</td>
                     <td>{p.reactions}</td>
                     <td>{p.comments}</td>
                     <td>{p.reposts}</td>

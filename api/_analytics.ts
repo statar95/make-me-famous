@@ -15,6 +15,8 @@ interface LinkedInPost {
   reaction_counter?: number
   comment_counter?: number
   repost_counter?: number
+  impressions_counter?: number
+  analytics?: { impressions?: number }
   is_repost?: boolean
   attachments?: unknown[]
 }
@@ -37,7 +39,7 @@ export async function refreshAnalytics(): Promise<Analytics> {
   const c = config()
   const now = Date.now()
   const due = (a?: Analytics) =>
-    !(a?.fetchedAt && now - Date.parse(a.fetchedAt) < FRESH_MS) &&
+    !(a?.withImpressions && a?.fetchedAt && now - Date.parse(a.fetchedAt) < FRESH_MS) &&
     !(a?.attemptedAt && now - Date.parse(a.attemptedAt) < BACKOFF_MS)
   const current = (await readState()).analytics
   if (!c) return { ...(current ?? { posts: [] }), error: 'Unipile is not configured' }
@@ -87,11 +89,38 @@ export async function refreshAnalytics(): Promise<Analytics> {
         reactions: i.reaction_counter ?? 0,
         comments: i.comment_counter ?? 0,
         reposts: i.repost_counter ?? 0,
+        impressions: i.impressions_counter || undefined,
         hasMedia: (i.attachments?.length ?? 0) > 0,
         viaApp: ours(i, appPosts),
       }))
+    // The list often leaves impressions out. Your own post, read singly, has them under analytics.
+    // Only the 20 newest, a few at a time: older numbers barely move and are kept from last time.
+    const previous = new Map((s0.analytics?.posts ?? []).map((p) => [p.id, p.impressions]))
+    const missing = posts.filter((p) => p.impressions === undefined)
+    for (const p of missing) if (previous.get(p.id) !== undefined) p.impressions = previous.get(p.id)
+    const toRead = [...posts]
+      .sort((a, b) => b.date.localeCompare(a.date))
+      .slice(0, 20)
+      .filter((p) => !p.impressions || Date.now() - Date.parse(p.date) < 14 * 86_400_000)
+    // Hard budget: this runs inside the cron, which also publishes.
+    const stopAt = Date.now() + 25_000
+    for (let i = 0; i < toRead.length && Date.now() < stopAt; i += 3)
+      await Promise.all(
+        toRead.slice(i, i + 3).map(async (p) => {
+          try {
+            const one = await Promise.race([
+              unipile<LinkedInPost>(c, `/api/v1/posts/${encodeURIComponent(p.socialId ?? p.id)}?account_id=${acct}`),
+              new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timed out')), 10_000)),
+            ])
+            const n = one.analytics?.impressions ?? one.impressions_counter
+            if (n) p.impressions = n
+          } catch (e) {
+            console.error('[analytics] impressions', e instanceof Error ? e.message : e)
+          }
+        }),
+      )
     const done = await mutate((s) => {
-      s.analytics = { providerId, posts, fetchedAt: new Date().toISOString(), attemptedAt: s.analytics?.attemptedAt }
+      s.analytics = { providerId, posts, fetchedAt: new Date().toISOString(), attemptedAt: s.analytics?.attemptedAt, withImpressions: true }
     })
     return done.analytics!
   } catch (e) {

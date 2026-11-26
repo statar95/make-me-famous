@@ -1,5 +1,7 @@
 import { json, mutate, readState, safeEqual } from './_lib.js'
 import { refreshAnalytics } from './_analytics.js'
+import { checkOutcomes, refreshEngagers } from './_engagement.js'
+import { pollCircle, rebuildCircle } from './_circle.js'
 import { publishPost } from './_publish.js'
 
 const STUCK_MS = 10 * 60_000
@@ -50,6 +52,24 @@ export async function GET(req: Request) {
     body.analyticsAt = a.fetchedAt ?? null
   } catch (e) {
     console.error('[cron] analytics', e instanceof Error ? e.message : e)
+  }
+  // Then the Comments tab's learning loop: who engages with you (daily), how your comments landed.
+  try {
+    const e = await refreshEngagers()
+    if (e.ran) body.engagers = e
+    const o = await checkOutcomes()
+    if (o.checked) body.outcomesChecked = o.checked
+  } catch (e) {
+    console.error('[cron] engagement', e instanceof Error ? e.message : e)
+  }
+  // Your circle's activity: who's in it (daily), and what they posted, liked or commented on.
+  try {
+    const r = await rebuildCircle()
+    if (r.ran) body.circle = r
+    const p = await pollCircle()
+    if (p.checked || p.refreshed) body.circlePoll = p
+  } catch (e) {
+    console.error('[cron] circle', e instanceof Error ? e.message : e)
   }
   return json(body)
 }

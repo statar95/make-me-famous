@@ -38,6 +38,7 @@ export interface AnalyticsPost {
   reactions: number
   comments: number
   reposts: number
+  impressions?: number
   hasMedia: boolean
   viaApp: boolean
 }
@@ -175,17 +176,99 @@ export interface FeedPost {
   authorId?: string
   headline?: string
   picture?: string
-  source: 'watchlist' | 'topic'
+  source: 'watchlist' | 'topic' | 'feed' | 'sector'
   topic?: string
+  /** Who in your circle posted, liked or commented on it. */
+  via?: { id: string; name: string; kind: 'posted' | 'liked' | 'commented' }[]
 }
 export interface EngageSettings {
   watchlist: { name: string; profileId: string; headline?: string; picture?: string; url?: string }[]
   topics: string[]
   minReactions: number
+  network?: { connections: boolean; following: boolean }
+  feedMinReactions?: number
+  industries?: { id: string; title: string }[]
 }
-/** Posts worth commenting on, from your watchlist and topic searches. */
-export async function fetchEngage(): Promise<{ settings: EngageSettings; posts: FeedPost[]; errors: string[] }> {
+/** How comments landed, for one person, one topic or the whole watchlist. Mirrors api/_engagement.ts. */
+export interface Score {
+  comments: number
+  measured: number
+  avgLikes: number
+  authorReplied: number
+  authorLiked: number
+  engagedBack: number
+}
+export interface EngageStats {
+  total: number
+  byPerson: Record<string, Score & { name: string }>
+  byTopic: Record<string, Score>
+  watchlist: Score
+  feed: Score
+}
+export interface PersonSuggestion {
+  profileId: string
+  name: string
+  headline?: string
+  picture?: string
+  url?: string
+  why: 'engages-with-you' | 'topic-author'
+  reason: string
+  score: number
+}
+export interface CirclePerson {
+  id: string
+  name: string
+  headline?: string
+  picture?: string
+  url?: string
+  why: ('watchlist' | 'engager' | 'message' | 'poster')[]
+}
+export interface CircleInfo {
+  builtAt: string | null
+  size: number
+  checkedToday: number
+  cached: number
+  minReactions: number
+  people: CirclePerson[]
+}
+/** Your circle's feed (from the cache, instant), plus how it's going. */
+export async function fetchEngage(): Promise<{
+  settings: EngageSettings
+  posts: FeedPost[]
+  errors: string[]
+  stats: EngageStats
+  engagersAt: string | null
+  circle: CircleInfo
+}> {
   return api('/api/engage')
+}
+/** Live searches: topics and your sector, plus who to follow. Slower. */
+export async function fetchMore(): Promise<{ posts: FeedPost[]; errors: string[]; suggestions: PersonSuggestion[] }> {
+  return api('/api/engage?view=more')
+}
+/** LinkedIn industries matching q, for the sector picker. */
+export async function searchIndustries(q: string, signal?: AbortSignal): Promise<{ id: string; title: string }[]> {
+  const data = await api(`/api/engage?industry=${encodeURIComponent(q)}`, { signal })
+  return data.results ?? []
+}
+/** Takes someone out of your circle for good. */
+export async function excludeFromCircle(profileId: string) {
+  return api('/api/engage', { method: 'POST', body: JSON.stringify({ exclude: profileId }) })
+}
+/** Never suggest this person again. */
+export async function dismissSuggestion(profileId: string) {
+  return api('/api/engage', { method: 'POST', body: JSON.stringify({ dismiss: profileId }) })
+}
+/** Comments tab: comment on someone's post, logged so the outcome gets tracked. */
+export async function sendComment(p: FeedPost, text: string) {
+  const meta = {
+    author: p.author,
+    authorId: p.authorId,
+    url: p.url?.startsWith('https://') ? p.url : undefined,
+    source: p.source,
+    topic: p.topic?.slice(0, 80),
+  }
+  return api('/api/comments', { method: 'POST', body: JSON.stringify({ socialId: p.socialId, text, meta }) })
 }
 export async function saveEngage(settings: EngageSettings) {
   return api('/api/engage', { method: 'PUT', body: JSON.stringify(settings) })

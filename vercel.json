@@ -14,6 +14,9 @@
     },
     "api/comments.ts": {
       "maxDuration": 120
+    },
+    "api/cron.ts": {
+      "maxDuration": 120
     }
   }
 }

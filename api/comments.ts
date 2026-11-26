@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { refreshAnalytics } from './_analytics.js'
+import { LOG_KEEP } from './_engagement.js'
 import { json, mutate, readState, requireAuth } from './_lib.js'
 import { applyMentions, config, unipile } from './_publish.js'
 
@@ -158,6 +159,18 @@ const Reply = z.object({
     )
     .max(5)
     .optional(),
+  /** Comments tab only: who and why, so the outcome can be tracked. */
+  meta: z
+    .object({
+      author: z.string().min(1).max(200),
+      authorId: z.string().max(200).optional(),
+      url: z.string().url().startsWith('https://').max(500).optional(),
+      source: z.enum(['watchlist', 'topic', 'feed', 'sector']),
+      topic: z.string().max(80).optional(),
+    })
+    .optional()
+    // Odd metadata only loses the log entry; it never blocks the comment.
+    .catch(undefined),
 })
 
 /** POST /api/comments {socialId, commentId, text, mentions?} -> replies on LinkedIn under that comment. */
@@ -168,7 +181,7 @@ export async function POST(req: Request) {
   if (!c) return json({ error: 'Unipile is not configured' }, 503)
   const parsed = Reply.safeParse(await req.json().catch(() => null))
   if (!parsed.success) return json({ error: 'Bad reply' }, 400)
-  const { socialId, commentId, text, mentions } = parsed.data
+  const { socialId, commentId, text, mentions, meta } = parsed.data
 
   // One reply per comment: claim it first, so a double click or a second tab can't send twice.
   // Commenting on someone's post: refuse if you've already commented there (in the app or not).
@@ -201,6 +214,18 @@ export async function POST(req: Request) {
       body: form,
     })
     console.log('[comments] replied', { chars: text.length })
+    if (!commentId && meta) {
+      // The comment is out; a failed log must not turn that into an error and invite a resend.
+      try {
+        await mutate((s) => {
+          const log = (s.commentLog ?? []).filter((l) => l.socialId !== socialId)
+          log.push({ socialId, commentId: res?.comment_id, ...meta, at: new Date().toISOString() })
+          s.commentLog = log.slice(-LOG_KEEP)
+        })
+      } catch (e) {
+        console.error('[comments] could not log comment', e instanceof Error ? e.message : e)
+      }
+    }
     return json({ ok: true, id: res?.comment_id })
   } catch (e) {
     // Only a clear refusal frees the claim; a timeout may still have posted, so keep it claimed.
